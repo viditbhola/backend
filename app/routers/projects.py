@@ -6,7 +6,7 @@ from app.core.auth import CurrentUser, Owner
 from app.core.errors import call_rpc
 from app.core.limiter import limiter
 from app.core.supabase import get_supabase
-from app.schemas import DeleteRequestCreate, ProjectCreate
+from app.schemas import DeleteRequestCreate
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -34,21 +34,6 @@ def _with_remaining(row: dict[str, Any]) -> dict[str, Any]:
 @router.get("")
 def list_projects(user: CurrentUser):
     return [_with_remaining(r) for r in user_projects(user)]
-
-
-@router.post("", status_code=201)
-def create_project(body: ProjectCreate, owner: Owner):
-    return call_rpc(
-        "create_project",
-        {
-            "p_owner": owner["id"],
-            "p_client": body.client_id,
-            "p_title": body.title,
-            "p_description": body.description,
-            "p_budget": str(body.budget),
-            "p_links": [link.model_dump() for link in body.links],
-        },
-    )
 
 
 @router.get("/{project_id}")

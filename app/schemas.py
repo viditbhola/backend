@@ -23,14 +23,6 @@ class ClientCreate(BaseModel):
     temp_password: Annotated[str, StringConstraints(min_length=8, max_length=72)]
 
 
-class ProjectCreate(BaseModel):
-    client_id: str
-    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-    description: LongText = ""
-    budget: Money
-    links: Links = []
-
-
 class ProposalCreate(BaseModel):
     """`side` is the sender's side: 'payee' (I get paid) or 'payer' (I pay)."""
 
