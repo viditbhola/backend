@@ -37,6 +37,9 @@ def dashboard(user: CurrentUser):
         row["received"] += _money(p["confirmed"])
         row["pending_to_receive"] += _money(p["budget"]) - _money(p["confirmed"])
 
+    paying_budget = sum((_money(p["budget"]) for p in paying), Decimal(0))
+    paying_paid = sum((_money(p["confirmed"]) for p in paying), Decimal(0))
+
     return {
         "total_received": total_confirmed,
         "total_pending_to_receive": total_budget - total_confirmed,
@@ -48,4 +51,10 @@ def dashboard(user: CurrentUser):
         "clients": [{"client_id": cid, **row} for cid, row in per_client.items()],
         "projects": projects,
         "paying": paying,
+        "paying_totals": {
+            "budget": paying_budget,
+            "paid": paying_paid,
+            "to_pay": paying_budget - paying_paid,
+            "awaiting": sum((_money(p["pending"]) for p in paying), Decimal(0)),
+        },
     }
