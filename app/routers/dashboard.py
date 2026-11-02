@@ -1,0 +1,47 @@
+from collections import defaultdict
+from decimal import Decimal
+from typing import Any
+
+from fastapi import APIRouter
+
+from app.core.auth import CurrentUser
+from app.core.errors import call_rpc
+
+router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+def _money(value: Any) -> Decimal:
+    return Decimal(str(value))
+
+
+@router.get("")
+def dashboard(user: CurrentUser):
+    """Totals for the signed-in owner (all their projects) or client (their own projects)."""
+    scope = {"p_owner": user["id"]} if user["role"] == "owner" else {"p_client": user["id"]}
+    projects = call_rpc("project_summaries", scope)
+
+    total_budget = sum((_money(p["budget"]) for p in projects), Decimal(0))
+    total_confirmed = sum((_money(p["confirmed"]) for p in projects), Decimal(0))
+    awaiting = sum((_money(p["pending"]) for p in projects), Decimal(0))
+
+    per_client: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {"client_name": "", "budget": Decimal(0), "received": Decimal(0), "pending_to_receive": Decimal(0)}
+    )
+    for p in projects:
+        row = per_client[p["client_id"]]
+        row["client_name"] = p["client_name"]
+        row["budget"] += _money(p["budget"])
+        row["received"] += _money(p["confirmed"])
+        row["pending_to_receive"] += _money(p["budget"]) - _money(p["confirmed"])
+
+    return {
+        "total_received": total_confirmed,
+        "total_pending_to_receive": total_budget - total_confirmed,
+        "total_budget": total_budget,
+        "awaiting_confirmation_amount": awaiting,
+        "awaiting_confirmation_count": sum(p["pending_count"] for p in projects),
+        "active_projects": sum(1 for p in projects if p["status"] == "active"),
+        "completed_projects": sum(1 for p in projects if p["status"] == "completed"),
+        "clients": [{"client_id": cid, **row} for cid, row in per_client.items()],
+        "projects": projects,
+    }
