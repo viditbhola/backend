@@ -419,3 +419,52 @@ def test_only_requester_can_cancel_deletion(world):
         call_rpc("cancel_project_deletion", {"p_request": request["id"], "p_user": owner})
     call_rpc("cancel_project_deletion", {"p_request": request["id"], "p_user": client})
     assert visible_to(owner, project)
+
+
+# --- owner records a payment received ---------------------------------------------------------
+
+
+def record(project, owner, amount):
+    return call_rpc(
+        "record_received_payment",
+        {
+            "p_project": project, "p_owner": owner, "p_amount": str(amount),
+            "p_paid_on": date.today().isoformat(), "p_method": "cash", "p_reference": "", "p_note": "",
+        },
+    )
+
+
+def test_owner_recorded_payment_is_confirmed_at_once(world):
+    owner, _, project = world
+    pay = record(project, owner, 25000)
+    assert pay["status"] == "confirmed" and pay["decided_by"] == owner and pay["created_by"] == owner
+    assert project_row(project)["status"] == "active"
+
+
+def test_owner_record_respects_budget_and_completes(world):
+    owner, client, project = world
+    with pytest.raises(HTTPException) as err:
+        record(project, owner, 100001)
+    assert err.value.status_code == 400
+    record(project, owner, 100000)
+    assert project_row(project)["status"] == "completed"
+    with pytest.raises(HTTPException) as err:
+        record(project, owner, 1)
+    assert err.value.status_code == 409
+
+
+def test_only_the_projects_owner_can_record(world, owners):
+    _, client, project = world
+    other_owner = next(o for o in owners if o != world[0])
+    for user in (client, other_owner):
+        with pytest.raises(HTTPException) as err:
+            record(project, user, 10)
+        assert err.value.status_code == 403
+
+
+def test_client_can_dispute_owner_recorded_payment(world):
+    owner, client, project = world
+    pay = record(project, owner, 100000)
+    assert project_row(project)["status"] == "completed"
+    respond(propose(pay["id"], client, "delete")["id"], owner, True)
+    assert project_row(project)["status"] == "active"

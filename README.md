@@ -69,3 +69,6 @@ Without `RUN_DB_TESTS=1` they are skipped.
 
 ## Deleting a project
 Either side of a project can request deletion with a reason; the other side must approve. Deletion hides the project and removes it from totals, but the records stay in the database. Apply `supabase/migrations/004_project_deletion.sql` before deploying.
+
+## Recording a payment you received
+On a project where you are paid, owners can record a payment the client did not log. It counts immediately and is tagged "recorded by owner"; the client can ask to change or remove it. The dashboard's **Need to be paid** list shows every active project that still owes you money. Apply `supabase/migrations/005_owner_recorded_payment.sql` first.

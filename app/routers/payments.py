@@ -38,6 +38,26 @@ def log_payment(request: Request, project_id: str, body: PaymentCreate, client: 
     )
 
 
+@router.post("/projects/{project_id}/received-payments", status_code=201)
+@limiter.limit("30/minute")
+def record_received_payment(request: Request, project_id: str, body: PaymentCreate, owner: Owner):
+    """The owner being paid records money the client did not log. Confirmed at once; the client can
+    dispute it through a payment change request."""
+    return call_rpc(
+        "record_received_payment",
+        {
+            "p_project": project_id,
+            "p_owner": owner["id"],
+            "p_amount": str(body.amount),
+            "p_paid_on": body.paid_on.isoformat(),
+            "p_method": body.method,
+            "p_reference": body.reference,
+            "p_note": body.note,
+            "p_links": [link.model_dump() for link in body.links],
+        },
+    )
+
+
 @router.patch("/payments/{payment_id}")
 @limiter.limit("30/minute")
 def edit_pending_payment(request: Request, payment_id: str, body: PaymentCreate, client: CurrentUser):
