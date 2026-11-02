@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from app.core.auth import CurrentUser
-from app.core.errors import call_rpc
+from app.routers.projects import user_projects
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -16,9 +16,12 @@ def _money(value: Any) -> Decimal:
 
 @router.get("")
 def dashboard(user: CurrentUser):
-    """Totals for the signed-in owner (all their projects) or client (their own projects)."""
-    scope = {"p_owner": user["id"]} if user["role"] == "owner" else {"p_client": user["id"]}
-    projects = call_rpc("project_summaries", scope)
+    """Totals over the projects where the user is the one being paid (owners) or the one paying
+    (clients). Projects an owner pays for are listed separately under `paying`."""
+    everything = user_projects(user)
+    side = "payee" if user["role"] == "owner" else "payer"
+    projects = [p for p in everything if p["my_side"] == side]
+    paying = [p for p in everything if p["my_side"] == "payer"] if user["role"] == "owner" else []
 
     total_budget = sum((_money(p["budget"]) for p in projects), Decimal(0))
     total_confirmed = sum((_money(p["confirmed"]) for p in projects), Decimal(0))
@@ -44,4 +47,5 @@ def dashboard(user: CurrentUser):
         "completed_projects": sum(1 for p in projects if p["status"] == "completed"),
         "clients": [{"client_id": cid, **row} for cid, row in per_client.items()],
         "projects": projects,
+        "paying": paying,
     }

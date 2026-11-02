@@ -6,7 +6,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.core.config import get_settings
 from app.core.limiter import limiter
-from app.routers import budget, clients, dashboard, me, payments, projects
+from app.routers import budget, clients, dashboard, me, payments, projects, proposals
 
 app = FastAPI(title="Project Payment Tracker")
 
@@ -20,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (me.router, clients.router, projects.router, payments.router, budget.router, dashboard.router):
+for router in (me.router, clients.router, projects.router, payments.router, budget.router, dashboard.router, proposals.router):
     app.include_router(router)
 
 

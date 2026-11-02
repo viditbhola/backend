@@ -61,3 +61,8 @@ set RUN_DB_TESTS=1
 pytest
 ```
 Without `RUN_DB_TESTS=1` they are skipped.
+
+## Project requests and links
+- **Requests page:** anyone can send a project request. Owners can send to a client or to the other owner (who then acts as the client/payer); clients can send to an owner with their bill details. The project exists only after the other person accepts; a denial needs a reason.
+- **Links:** add up to 10 links when creating or requesting a project, and on every payment you log (e.g. invoices, receipts, drive folders). Only http/https links are accepted.
+- Apply `supabase/migrations/003_project_requests_and_links.sql` in the Supabase SQL editor **before** deploying the new backend.

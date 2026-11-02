@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 
-from app.core.auth import Client, Owner
+from app.core.auth import CurrentUser, Owner
 from app.core.errors import call_rpc
 from app.core.limiter import limiter
 from app.schemas import BudgetRequestCreate
@@ -24,7 +24,7 @@ def request_increase(request: Request, project_id: str, body: BudgetRequestCreat
 
 @router.post("/budget-requests/{request_id}/accept")
 @limiter.limit("30/minute")
-def accept_increase(request: Request, request_id: str, client: Client):
+def accept_increase(request: Request, request_id: str, client: CurrentUser):
     return call_rpc(
         "respond_budget_request",
         {"p_request": request_id, "p_client": client["id"], "p_accept": True},
@@ -33,7 +33,7 @@ def accept_increase(request: Request, request_id: str, client: Client):
 
 @router.post("/budget-requests/{request_id}/reject")
 @limiter.limit("30/minute")
-def reject_increase(request: Request, request_id: str, client: Client):
+def reject_increase(request: Request, request_id: str, client: CurrentUser):
     return call_rpc(
         "respond_budget_request",
         {"p_request": request_id, "p_client": client["id"], "p_accept": False},

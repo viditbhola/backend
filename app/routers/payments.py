@@ -3,7 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
-from app.core.auth import Client, CurrentUser, Owner
+from app.core.auth import CurrentUser, Owner
 from app.core.config import get_settings
 from app.core.errors import call_rpc
 from app.core.limiter import limiter
@@ -22,7 +22,7 @@ ALLOWED_PROOF_TYPES = {
 
 @router.post("/projects/{project_id}/payments", status_code=201)
 @limiter.limit("30/minute")
-def log_payment(request: Request, project_id: str, body: PaymentCreate, client: Client):
+def log_payment(request: Request, project_id: str, body: PaymentCreate, client: CurrentUser):
     return call_rpc(
         "log_payment",
         {
@@ -33,13 +33,14 @@ def log_payment(request: Request, project_id: str, body: PaymentCreate, client: 
             "p_method": body.method,
             "p_reference": body.reference,
             "p_note": body.note,
+            "p_links": [link.model_dump() for link in body.links],
         },
     )
 
 
 @router.patch("/payments/{payment_id}")
 @limiter.limit("30/minute")
-def edit_pending_payment(request: Request, payment_id: str, body: PaymentCreate, client: Client):
+def edit_pending_payment(request: Request, payment_id: str, body: PaymentCreate, client: CurrentUser):
     """Direct edit; allowed only while the payment is still pending."""
     return call_rpc(
         "edit_pending_payment",
@@ -51,13 +52,14 @@ def edit_pending_payment(request: Request, payment_id: str, body: PaymentCreate,
             "p_method": body.method,
             "p_reference": body.reference,
             "p_note": body.note,
+            "p_links": [link.model_dump() for link in body.links],
         },
     )
 
 
 @router.delete("/payments/{payment_id}")
 @limiter.limit("30/minute")
-def delete_pending_payment(request: Request, payment_id: str, client: Client):
+def delete_pending_payment(request: Request, payment_id: str, client: CurrentUser):
     """Direct delete; allowed only while the payment is still pending."""
     return call_rpc("delete_pending_payment", {"p_payment": payment_id, "p_client": client["id"]})
 
@@ -124,7 +126,7 @@ def reject_payment(request: Request, payment_id: str, body: PaymentReject, owner
 
 @router.post("/payments/{payment_id}/proof")
 @limiter.limit("10/minute")
-async def upload_proof(request: Request, payment_id: str, client: Client, file: UploadFile = File(...)):
+async def upload_proof(request: Request, payment_id: str, client: CurrentUser, file: UploadFile = File(...)):
     settings = get_settings()
     extension = ALLOWED_PROOF_TYPES.get(file.content_type or "")
     if extension is None:

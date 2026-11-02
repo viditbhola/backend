@@ -9,6 +9,14 @@ ShortText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2
 LongText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
 
 
+class Link(BaseModel):
+    label: Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)] = ""
+    url: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000, pattern=r"^https?://\S+$")]
+
+
+Links = Annotated[list[Link], Field(max_length=10)]
+
+
 class ClientCreate(BaseModel):
     full_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
     email: EmailStr
@@ -20,6 +28,22 @@ class ProjectCreate(BaseModel):
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     description: LongText = ""
     budget: Money
+    links: Links = []
+
+
+class ProposalCreate(BaseModel):
+    """`side` is the sender's side: 'payee' (I get paid) or 'payer' (I pay)."""
+
+    recipient_id: str
+    side: Literal["payee", "payer"]
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    description: LongText = ""
+    budget: Money
+    links: Links = []
+
+
+class ProposalReject(BaseModel):
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 
 
 class PaymentCreate(BaseModel):
@@ -28,6 +52,7 @@ class PaymentCreate(BaseModel):
     method: ShortText = ""
     reference: ShortText = ""
     note: LongText = ""
+    links: Links = []
 
 
 class PaymentReject(BaseModel):

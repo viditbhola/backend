@@ -10,9 +10,17 @@ from app.schemas import ProjectCreate
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-def _scope(user: dict[str, Any]) -> dict[str, Any]:
-    key = "p_owner" if user["role"] == "owner" else "p_client"
-    return {key: user["id"]}
+def user_projects(user: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every project the user is part of, tagged with `my_side` ('payee' = gets paid, 'payer' = pays).
+
+    Sides belong to the project, not the account role: an owner can be the payer of the other
+    owner's project.
+    """
+    payee = []
+    if user["role"] == "owner":  # only owners can be paid
+        payee = [{**r, "my_side": "payee"} for r in call_rpc("project_summaries", {"p_owner": user["id"]})]
+    payer = [{**r, "my_side": "payer"} for r in call_rpc("project_summaries", {"p_client": user["id"]})]
+    return sorted(payee + payer, key=lambda r: r["created_at"], reverse=True)
 
 
 def _with_remaining(row: dict[str, Any]) -> dict[str, Any]:
@@ -24,8 +32,7 @@ def _with_remaining(row: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("")
 def list_projects(user: CurrentUser):
-    rows = call_rpc("project_summaries", _scope(user))
-    return [_with_remaining(r) for r in rows]
+    return [_with_remaining(r) for r in user_projects(user)]
 
 
 @router.post("", status_code=201)
@@ -38,13 +45,14 @@ def create_project(body: ProjectCreate, owner: Owner):
             "p_title": body.title,
             "p_description": body.description,
             "p_budget": str(body.budget),
+            "p_links": [link.model_dump() for link in body.links],
         },
     )
 
 
 @router.get("/{project_id}")
 def project_detail(project_id: str, user: CurrentUser):
-    summaries = [r for r in call_rpc("project_summaries", _scope(user)) if r["id"] == project_id]
+    summaries = [r for r in user_projects(user) if r["id"] == project_id]
     if not summaries:
         raise HTTPException(status_code=404, detail="project not found")
     db = get_supabase()

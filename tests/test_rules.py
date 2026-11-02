@@ -241,3 +241,107 @@ def test_only_one_open_change_per_payment(world):
     with pytest.raises(HTTPException) as err:
         propose(pay["id"], owner, "delete")
     assert err.value.status_code == 409
+
+
+# --- project requests (either side proposes, the other accepts) and links ---------------------
+
+
+def propose_project(proposer, recipient, side, links=None):
+    return call_rpc(
+        "create_project_proposal",
+        {
+            "p_proposer": proposer, "p_recipient": recipient, "p_side": side, "p_title": "Req",
+            "p_description": "", "p_budget": "5000", "p_links": links or [],
+        },
+    )
+
+
+def answer_proposal(proposal, user, accept, reason=None):
+    return call_rpc(
+        "respond_project_proposal",
+        {"p_proposal": proposal, "p_user": user, "p_accept": accept, "p_reason": reason},
+    )
+
+
+def test_owner_request_to_other_owner_makes_them_the_payer(owners):
+    a, b = owners
+    prop = propose_project(a, b, "payee", [{"label": "Quote", "url": "https://example.com/q"}])
+    accepted = answer_proposal(prop["id"], b, True)
+    project = get_supabase().table("projects").select("*").eq("id", accepted["project_id"]).single().execute().data
+    assert (project["owner_id"], project["client_id"]) == (a, b)
+    assert project["links"] == [{"label": "Quote", "url": "https://example.com/q"}]
+    # the other owner pays: logs a payment, the payee owner confirms it
+    pay = log(project["id"], b, 5000)
+    assert decide(pay["id"], a, True)["status"] == "confirmed"
+
+
+def test_client_request_to_owner_makes_client_the_payer(owners):
+    owner, _ = owners
+    client = make_user("client")
+    accepted = answer_proposal(propose_project(client, owner, "payer")["id"], owner, True)
+    project = get_supabase().table("projects").select("owner_id,client_id").eq("id", accepted["project_id"]).single().execute().data
+    assert (project["owner_id"], project["client_id"]) == (owner, client)
+
+
+def test_proposal_rules(owners):
+    owner, _ = owners
+    client, other_client = make_user("client"), make_user("client")
+    for proposer, recipient, side in [
+        (client, other_client, "payer"),  # a payee must be an owner
+        (client, owner, "payee"),         # a client cannot be paid
+        (owner, owner, "payee"),          # not to yourself
+        (owner, client, "payer"),         # the payee (recipient) must be an owner
+    ]:
+        with pytest.raises(HTTPException):
+            propose_project(proposer, recipient, side)
+
+
+def test_only_recipient_responds_and_reject_needs_reason(owners):
+    owner, other_owner = owners
+    client = make_user("client")
+    prop = propose_project(owner, client, "payee")
+    with pytest.raises(HTTPException) as err:
+        answer_proposal(prop["id"], other_owner, True)
+    assert err.value.status_code == 403
+    with pytest.raises(HTTPException):
+        answer_proposal(prop["id"], client, False, "")
+    answer_proposal(prop["id"], client, False, "not agreed")
+    with pytest.raises(HTTPException) as err:
+        answer_proposal(prop["id"], client, True)  # already decided
+    assert err.value.status_code == 409
+
+
+def test_proposer_can_cancel_only_while_pending(owners):
+    owner, _ = owners
+    client = make_user("client")
+    prop = propose_project(owner, client, "payee")
+    with pytest.raises(HTTPException):
+        call_rpc("cancel_project_proposal", {"p_proposal": prop["id"], "p_user": client})
+    call_rpc("cancel_project_proposal", {"p_proposal": prop["id"], "p_user": owner})
+    with pytest.raises(HTTPException) as err:
+        answer_proposal(prop["id"], client, True)
+    assert err.value.status_code == 409
+
+
+def test_links_are_validated_and_stored_on_payments(world):
+    _, client, project = world
+    bad = [
+        [{"url": "javascript:alert(1)"}],
+        [{"url": "https://a.com/x y"}],
+        [{"url": "https://a.com"}] * 11,
+        [{"label": "x" * 101, "url": "https://a.com"}],
+    ]
+    for links in bad:
+        with pytest.raises(HTTPException) as err:
+            call_rpc("log_payment", {
+                "p_project": project, "p_client": client, "p_amount": "10",
+                "p_paid_on": date.today().isoformat(), "p_method": "", "p_reference": "",
+                "p_note": "", "p_links": links,
+            })
+        assert err.value.status_code == 400
+    ok = call_rpc("log_payment", {
+        "p_project": project, "p_client": client, "p_amount": "10",
+        "p_paid_on": date.today().isoformat(), "p_method": "", "p_reference": "", "p_note": "",
+        "p_links": [{"label": "Receipt", "url": "https://example.com/r"}],
+    })
+    assert ok["links"] == [{"label": "Receipt", "url": "https://example.com/r"}]
