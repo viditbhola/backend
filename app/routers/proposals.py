@@ -31,14 +31,12 @@ def list_proposals(user: CurrentUser) -> dict[str, list[dict[str, Any]]]:
         .execute()
         .data
     )
+    if not rows:
+        return {"incoming": [], "outgoing": []}
+    people_ids = list({i for r in rows for i in (r["proposer_id"], r["recipient_id"])})
     names = {
         p["id"]: p["full_name"]
-        for p in get_supabase()
-        .table("profiles")
-        .select("id, full_name")
-        .in_("id", list({i for r in rows for i in (r["proposer_id"], r["recipient_id"])}) or ["-"])
-        .execute()
-        .data
+        for p in get_supabase().table("profiles").select("id, full_name").in_("id", people_ids).execute().data
     }
     rows = [
         {**r, "proposer_name": names.get(r["proposer_id"], ""), "recipient_name": names.get(r["recipient_id"], "")}
