@@ -77,6 +77,10 @@ class PaymentChangeCreate(BaseModel):
         return self
 
 
+class DeleteRequestCreate(BaseModel):
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+
+
 class BudgetRequestCreate(BaseModel):
     new_budget: Money
     note: LongText = ""

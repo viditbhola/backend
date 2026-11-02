@@ -345,3 +345,77 @@ def test_links_are_validated_and_stored_on_payments(world):
         "p_links": [{"label": "Receipt", "url": "https://example.com/r"}],
     })
     assert ok["links"] == [{"label": "Receipt", "url": "https://example.com/r"}]
+
+
+# --- two-party project deletion ---------------------------------------------------------------
+
+
+def ask_delete(project, user, reason="not needed"):
+    return call_rpc("request_project_deletion", {"p_project": project, "p_user": user, "p_reason": reason})
+
+
+def answer_delete(request, user, approve):
+    return call_rpc("respond_project_deletion", {"p_request": request, "p_user": user, "p_approve": approve})
+
+
+def visible_to(user, project):
+    rows = call_rpc("project_summaries", {"p_owner": user}) + call_rpc("project_summaries", {"p_client": user})
+    return any(r["id"] == project for r in rows)
+
+
+def status_of(table, row_id):
+    return get_supabase().table(table).select("status").eq("id", row_id).single().execute().data["status"]
+
+
+def test_non_party_cannot_request_deletion(world, owners):
+    _, _, project = world
+    with pytest.raises(HTTPException) as err:
+        ask_delete(project, next(o for o in owners if o != world[0]))
+    assert err.value.status_code == 403
+
+
+def test_requester_cannot_approve_own_deletion(world):
+    owner, client, project = world
+    request = ask_delete(project, client)
+    with pytest.raises(HTTPException) as err:
+        answer_delete(request["id"], client, True)
+    assert err.value.status_code == 403
+    with pytest.raises(HTTPException) as err:
+        ask_delete(project, owner)  # one open request per project
+    assert err.value.status_code == 409
+
+
+def test_rejected_deletion_keeps_project(world):
+    owner, client, project = world
+    answer_delete(ask_delete(project, client)["id"], owner, False)
+    assert visible_to(owner, project) and project_row(project)["status"] == "active"
+
+
+def test_approved_deletion_hides_project_and_cleans_up(world):
+    owner, client, project = world
+    confirmed = decide(log(project, client, 1000)["id"], owner, True)
+    pending = log(project, client, 500)
+    budget = call_rpc(
+        "request_budget_increase",
+        {"p_project": project, "p_owner": owner, "p_new_budget": "150000", "p_note": ""},
+    )
+    change = propose(confirmed["id"], client, "delete")
+    answer_delete(ask_delete(project, client)["id"], owner, True)
+
+    assert not visible_to(owner, project) and not visible_to(client, project)
+    assert status_of("payments", pending["id"]) == "deleted"
+    assert status_of("payments", confirmed["id"]) == "confirmed"
+    assert status_of("budget_requests", budget["id"]) == "cancelled"
+    assert status_of("payment_change_requests", change["id"]) == "cancelled"
+    with pytest.raises(HTTPException) as err:
+        log(project, client, 1)
+    assert err.value.status_code == 409
+
+
+def test_only_requester_can_cancel_deletion(world):
+    owner, client, project = world
+    request = ask_delete(project, client)
+    with pytest.raises(HTTPException):
+        call_rpc("cancel_project_deletion", {"p_request": request["id"], "p_user": owner})
+    call_rpc("cancel_project_deletion", {"p_request": request["id"], "p_user": client})
+    assert visible_to(owner, project)

@@ -20,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (me.router, clients.router, projects.router, payments.router, budget.router, dashboard.router, proposals.router):
+for router in (me.router, clients.router, projects.router, payments.router, budget.router, dashboard.router, proposals.router, projects.deletion_router):
     app.include_router(router)
 
 

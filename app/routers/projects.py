@@ -1,11 +1,12 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.core.auth import CurrentUser, Owner
 from app.core.errors import call_rpc
+from app.core.limiter import limiter
 from app.core.supabase import get_supabase
-from app.schemas import ProjectCreate
+from app.schemas import DeleteRequestCreate, ProjectCreate
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -80,9 +81,53 @@ def project_detail(project_id: str, user: CurrentUser):
         .execute()
         .data
     )
+    delete_requests = (
+        db.table("project_delete_requests")
+        .select("*")
+        .eq("project_id", project_id)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+    )
     return {
         "project": _with_remaining(summaries[0]),
         "payments": payments,
         "budget_requests": budget_requests,
         "payment_changes": payment_changes,
+        "delete_requests": delete_requests,
     }
+
+
+@router.post("/{project_id}/delete-requests", status_code=201)
+@limiter.limit("30/minute")
+def request_deletion(request: Request, project_id: str, body: DeleteRequestCreate, user: CurrentUser):
+    """Either party asks to delete the project; the other party must approve."""
+    return call_rpc(
+        "request_project_deletion",
+        {"p_project": project_id, "p_user": user["id"], "p_reason": body.reason},
+    )
+
+
+deletion_router = APIRouter(prefix="/project-delete-requests", tags=["projects"])
+
+
+@deletion_router.post("/{request_id}/approve")
+@limiter.limit("30/minute")
+def approve_deletion(request: Request, request_id: str, user: CurrentUser):
+    return call_rpc(
+        "respond_project_deletion", {"p_request": request_id, "p_user": user["id"], "p_approve": True}
+    )
+
+
+@deletion_router.post("/{request_id}/reject")
+@limiter.limit("30/minute")
+def reject_deletion(request: Request, request_id: str, user: CurrentUser):
+    return call_rpc(
+        "respond_project_deletion", {"p_request": request_id, "p_user": user["id"], "p_approve": False}
+    )
+
+
+@deletion_router.post("/{request_id}/cancel")
+@limiter.limit("30/minute")
+def cancel_deletion(request: Request, request_id: str, user: CurrentUser):
+    return call_rpc("cancel_project_deletion", {"p_request": request_id, "p_user": user["id"]})
